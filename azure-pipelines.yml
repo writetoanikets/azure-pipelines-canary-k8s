@@ -48,8 +48,7 @@ stages:
 
         Dockerfile: $(Build.SourcesDirectory)/app/Dockerfile
 
-        buildContext: $(Build.SourcesDirectory)
-
+        buildContext: $(Build.SourcesDirectory)/app
         addPipelineData: false
         addBaseImageData: false
 
