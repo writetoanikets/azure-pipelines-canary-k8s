@@ -2,13 +2,13 @@ trigger:
 - main
 
 pool:
-  vmImage: ubuntu-latest
+  name: azureSubsPool
 
 variables:
   imageName: azure-pipelines-canary-k8s # Docker image name
   dockerRegistryServiceConnection: azure-pipelines-canary-acr # Service connection to ACR
   imageRepository: 'azure-pipelines-canary-k8s' # Image repository name
-  containerRegistry: example.azurecr.io # Full container registry URL
+  containerRegistry: canaryacraniket.azurecr.io # Full container registry URL
   tag: '$(Build.BuildId)' # Tag image with the build ID for versioning
 
 stages:
