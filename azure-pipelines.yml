@@ -1,32 +1,57 @@
 trigger:
 - main
 
-pool:
-  name: azureSubsPool
-
 variables:
-  imageName: azure-pipelines-canary-k8s # Docker image name
-  dockerRegistryServiceConnection: azure-pipelines-canary-acr # Service connection to ACR
-  imageRepository: 'azure-pipelines-canary-k8s' # Image repository name
-  containerRegistry: canaryacraniket.azurecr.io # Full container registry URL
-  tag: '$(Build.BuildId)' # Tag image with the build ID for versioning
+  imageName: azure-pipelines-canary-k8s
+  dockerRegistryServiceConnection: azure-pipelines-canary-acr
+  containerRegistry: canaryacraniket.azurecr.io
+  tag: $(Build.BuildId)
 
 stages:
+
 - stage: Build
-  displayName: Build stage
-  jobs:  
+  displayName: Build Stage
+
+  jobs:
+
   - job: Build
-    displayName: Build
+    displayName: Build and Push Docker Image
+
     pool:
-     name: azureSubsPool
+      name: azureSubsPool
+
     steps:
-    # Build and push Docker image to Azure Container Registry
+
+    - script: |
+        echo "Build Sources Directory:"
+        echo $(Build.SourcesDirectory)
+
+        echo "Current Directory:"
+        pwd
+
+        echo "Repository Files:"
+        find $(Build.SourcesDirectory) -type f | head -100
+      displayName: Debug Repository Structure
+
     - task: Docker@2
-      displayName: Build and push image
+      displayName: Build and Push Image
+
+      env:
+        DOCKER_BUILDKIT: 0
+
       inputs:
         containerRegistry: $(dockerRegistryServiceConnection)
+
         repository: $(imageName)
+
         command: buildAndPush
-        Dockerfile: app/Dockerfile
+
+        Dockerfile: $(Build.SourcesDirectory)/app/Dockerfile
+
+        buildContext: $(Build.SourcesDirectory)
+
+        addPipelineData: false
+        addBaseImageData: false
+
         tags: |
           $(tag)
