@@ -8,9 +8,9 @@ variables:
 
 stages:
 
-# =========================
-# BUILD STAGE
-# =========================
+# =====================================================
+# STAGE 1 - BUILD AND PUSH IMAGE
+# =====================================================
 
 - stage: Build
   displayName: Build Stage
@@ -18,6 +18,7 @@ stages:
   jobs:
 
   - job: Build
+    displayName: Build and Push Docker Image
 
     pool:
       name: azureSubsPool
@@ -27,12 +28,18 @@ stages:
     - checkout: self
 
     - script: |
+        echo "Logging into ACR..."
+
         az acr login --name canaryacraniket
+
+        echo "Building Docker image..."
 
         docker build \
           -t $(acrName)/$(imageName):$(tag) \
           -f $(Build.SourcesDirectory)/app/Dockerfile \
           $(Build.SourcesDirectory)/app
+
+        echo "Pushing Docker image..."
 
         docker push $(acrName)/$(imageName):$(tag)
 
@@ -45,9 +52,9 @@ stages:
       artifact: misc
 
 
-# =========================
-# DEPLOY CANARY STAGE
-# =========================
+# =====================================================
+# STAGE 2 - DEPLOY CANARY
+# =====================================================
 
 - stage: DeployCanary
   displayName: Deploy Canary
@@ -62,10 +69,10 @@ stages:
 
     displayName: Deploy Canary
 
+    environment: akscanary
+
     pool:
       name: azureSubsPool
-
-    environment: akscanary
 
     strategy:
 
@@ -74,6 +81,8 @@ stages:
         deploy:
 
           steps:
+
+          - checkout: self
 
           - download: current
             artifact: manifests
@@ -85,12 +94,11 @@ stages:
               kubectl get nodes
             displayName: Verify Kubernetes Cluster
 
-          # Create namespace
           - script: |
-              kubectl create namespace canarydemo --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create namespace canarydemo \
+                --dry-run=client -o yaml | kubectl apply -f -
             displayName: Create Namespace
 
-          # Create ACR secret
           - script: |
               kubectl create secret docker-registry my-acr-secret \
                 --docker-server=$(acrName) \
@@ -100,26 +108,33 @@ stages:
                 --dry-run=client -o yaml | kubectl apply -f -
             displayName: Create ACR Secret
 
-          # Deploy service
           - script: |
-              kubectl apply -n canarydemo \
+              kubectl apply \
+                -n canarydemo \
                 -f $(Pipeline.Workspace)/manifests/service.yml
             displayName: Deploy Service
 
-          # Deploy application
           - script: |
-              kubectl apply -n canarydemo \
+              kubectl apply \
+                -n canarydemo \
                 -f $(Pipeline.Workspace)/manifests/deployment.yml
             displayName: Deploy Application
 
-          # Deploy Fortio
           - script: |
-              kubectl apply -n canarydemo \
+              kubectl apply \
+                -n canarydemo \
                 -f $(Pipeline.Workspace)/misc/
             displayName: Deploy Fortio
-# =========================
-# PROMOTE CANARY
-# =========================
+
+          - script: |
+              kubectl get deployments -n canarydemo
+              kubectl get pods -n canarydemo
+            displayName: Show Deployments and Pods
+
+
+# =====================================================
+# STAGE 3 - PROMOTE CANARY
+# =====================================================
 
 - stage: PromoteCanary
 
@@ -148,25 +163,19 @@ stages:
 
           steps:
 
-          # Scale stable deployment up
           - script: |
-              kubectl scale deployment sampleapp-stable \
+              kubectl get deployments -n canarydemo
+
+              kubectl scale deployment sampleapp-baseline \
                 --replicas=4 \
                 -n canarydemo
 
-            displayName: Scale Stable Deployment
-
-          # Remove canary deployment
-          - script: |
-              kubectl delete deployment sampleapp-canary \
-                -n canarydemo
-
-            displayName: Remove Canary Deployment
+            displayName: Promote Canary
 
 
-# =========================
-# REJECT CANARY
-# =========================
+# =====================================================
+# STAGE 4 - REJECT / ROLLBACK CANARY
+# =====================================================
 
 - stage: RejectCanary
 
@@ -195,17 +204,8 @@ stages:
 
           steps:
 
-          # Remove canary deployment
           - script: |
-              kubectl delete deployment sampleapp-canary \
+              kubectl rollout undo deployment/sampleapp-baseline \
                 -n canarydemo
 
-            displayName: Remove Canary
-
-          # Restore stable replicas
-          - script: |
-              kubectl scale deployment sampleapp-stable \
-                --replicas=4 \
-                -n canarydemo
-
-            displayName: Restore Stable Deployment
+            displayName: Rollback Canary
