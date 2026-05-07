@@ -117,3 +117,95 @@ stages:
               kubectl apply -n canarydemo \
                 -f $(Pipeline.Workspace)/misc/
             displayName: Deploy Fortio
+# =========================
+# PROMOTE CANARY
+# =========================
+
+- stage: PromoteCanary
+
+  displayName: Promote Canary
+
+  dependsOn: DeployCanary
+
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: PromoteCanary
+
+    displayName: Promote Canary
+
+    environment: akspromote
+
+    pool:
+      name: azureSubsPool
+
+    strategy:
+
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          # Scale stable deployment up
+          - script: |
+              kubectl scale deployment sampleapp-stable \
+                --replicas=4 \
+                -n canarydemo
+
+            displayName: Scale Stable Deployment
+
+          # Remove canary deployment
+          - script: |
+              kubectl delete deployment sampleapp-canary \
+                -n canarydemo
+
+            displayName: Remove Canary Deployment
+
+
+# =========================
+# REJECT CANARY
+# =========================
+
+- stage: RejectCanary
+
+  displayName: Reject Canary
+
+  dependsOn: PromoteCanary
+
+  condition: failed()
+
+  jobs:
+
+  - deployment: RejectCanary
+
+    displayName: Reject Canary
+
+    environment: akscanary
+
+    pool:
+      name: azureSubsPool
+
+    strategy:
+
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          # Remove canary deployment
+          - script: |
+              kubectl delete deployment sampleapp-canary \
+                -n canarydemo
+
+            displayName: Remove Canary
+
+          # Restore stable replicas
+          - script: |
+              kubectl scale deployment sampleapp-stable \
+                --replicas=4 \
+                -n canarydemo
+
+            displayName: Restore Stable Deployment
