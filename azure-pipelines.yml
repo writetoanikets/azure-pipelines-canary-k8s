@@ -118,6 +118,11 @@ stages:
               kubectl apply \
                 -n canarydemo \
                 -f $(Pipeline.Workspace)/manifests/deployment.yml
+                
+              kubectl set image deployment/sampleapp-baseline \
+                sampleapp=$(acrName)/$(imageName):$(tag) \
+                -n canarydemo
+
             displayName: Deploy Application
 
           - script: |
