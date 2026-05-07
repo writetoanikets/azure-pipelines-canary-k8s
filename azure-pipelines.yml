@@ -1,9 +1,6 @@
 trigger:
 - main
 
-pool:
-  name: azureSubsPool
-
 variables:
   imageName: azure-pipelines-canary-k8s
   acrName: canaryacraniket.azurecr.io
@@ -11,27 +8,112 @@ variables:
 
 stages:
 
+# =========================
+# BUILD STAGE
+# =========================
+
 - stage: Build
-  displayName: Build stage
+  displayName: Build Stage
+
   jobs:
 
   - job: Build
-    displayName: Build
+
+    pool:
+      name: azureSubsPool
+
     steps:
 
     - checkout: self
 
     - script: |
+        az acr login --name canaryacraniket
+
         docker build \
           -t $(acrName)/$(imageName):$(tag) \
           -f $(Build.SourcesDirectory)/app/Dockerfile \
           $(Build.SourcesDirectory)/app
 
-      displayName: Docker Build
-
-    - script: |
-        az acr login --name canaryacraniket
-
         docker push $(acrName)/$(imageName):$(tag)
 
-      displayName: Docker Push
+      displayName: Build and Push Image
+
+    - publish: manifests
+      artifact: manifests
+
+    - publish: misc
+      artifact: misc
+
+
+# =========================
+# DEPLOY CANARY STAGE
+# =========================
+
+- stage: DeployCanary
+  displayName: Deploy Canary
+
+  dependsOn: Build
+
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: DeployCanary
+
+    displayName: Deploy Canary
+
+    pool:
+      name: azureSubsPool
+
+    environment: akscanary
+
+    strategy:
+
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          - download: current
+            artifact: manifests
+
+          - download: current
+            artifact: misc
+
+          - script: |
+              kubectl get nodes
+            displayName: Verify Kubernetes Cluster
+
+          # Create namespace
+          - script: |
+              kubectl create namespace canarydemo --dry-run=client -o yaml | kubectl apply -f -
+            displayName: Create Namespace
+
+          # Create ACR secret
+          - script: |
+              kubectl create secret docker-registry my-acr-secret \
+                --docker-server=$(acrName) \
+                --docker-username=$(ACR_USERNAME) \
+                --docker-password=$(ACR_PASSWORD) \
+                --namespace canarydemo \
+                --dry-run=client -o yaml | kubectl apply -f -
+            displayName: Create ACR Secret
+
+          # Deploy service
+          - script: |
+              kubectl apply -n canarydemo \
+                -f $(Pipeline.Workspace)/manifests/service.yml
+            displayName: Deploy Service
+
+          # Deploy application
+          - script: |
+              kubectl apply -n canarydemo \
+                -f $(Pipeline.Workspace)/manifests/deployment.yml
+            displayName: Deploy Application
+
+          # Deploy Fortio
+          - script: |
+              kubectl apply -n canarydemo \
+                -f $(Pipeline.Workspace)/misc/
+            displayName: Deploy Fortio
