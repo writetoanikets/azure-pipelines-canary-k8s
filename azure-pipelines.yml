@@ -122,6 +122,10 @@ stages:
               kubectl set image deployment/sampleapp-baseline \
                 sampleapp=$(acrName)/$(imageName):$(tag) \
                 -n canarydemo
+              
+              kubectl set image deployment/sampleapp-canary \
+                sampleapp=$(acrName)/$(imageName):$(tag)\
+                 -n canarydemo || true
 
             displayName: Deploy Application
 
